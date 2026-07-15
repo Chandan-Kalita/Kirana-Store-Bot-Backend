@@ -12,7 +12,7 @@ async def handle_task(request: Request):
     try:
         verify_task_request(
             request.headers.get("Authorization"),
-            expected_audience=str(request.url),
+            expected_audience=get_settings().task_handler_url,
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc

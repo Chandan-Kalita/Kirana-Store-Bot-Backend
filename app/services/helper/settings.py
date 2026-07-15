@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     cloud_tasks_location: str
     tasks_invoker_service_account: str
     task_handler_path: str = "/tasks/handle"
+    # The service's own https URL -- used to build Cloud Tasks targets/OIDC
+    # audiences. Not derived from the incoming request: Cloud Run terminates
+    # TLS ahead of the container, and trusting X-Forwarded-Proto from its
+    # proxy is exactly the kind of thing that's easy to get wrong.
+    service_url: str = ""
+
+    @property
+    def task_handler_url(self) -> str:
+        return self.service_url.rstrip("/") + self.task_handler_path
 
     port: int = 8080
 

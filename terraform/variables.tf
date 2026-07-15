@@ -44,6 +44,17 @@ variable "task_handler_path" {
   default     = "/tasks/handle"
 }
 
+variable "service_url" {
+  description = <<-EOT
+    The Cloud Run service's own https URL, used to build Cloud Tasks targets
+    and OIDC audiences. Self-referential -- unknown on the apply that first
+    creates the service, so it defaults to "" then. Once deployed, set it
+    (e.g. from `terraform output -raw cloud_run_url`) and re-apply.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "anthropic_base_url" {
   description = "Optional override for the Anthropic API base URL. Empty string means unset."
   type        = string

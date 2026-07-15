@@ -21,8 +21,8 @@ resource "google_cloud_tasks_queue" "app" {
 # NOTE: the HTTP target (URL + OIDC token) for a Cloud Tasks queue is set
 # per-task by the caller (CreateTask), not on the queue resource itself.
 # The app builds task requests against:
-#   https://<CLOUD_RUN service URL>${TASK_HANDLER_PATH}
+#   ${SERVICE_URL}${TASK_HANDLER_PATH}
 # signed with TASKS_INVOKER_SERVICE_ACCOUNT's OIDC token, audience = that URL.
-# See outputs.tf for the deployed service URL (self-referencing, so it's
-# only known after the first `apply` -- can't be injected as an env var on
-# the same apply that creates the service).
+# SERVICE_URL (var.service_url, see cloud_run.tf) is self-referential -- it's
+# "" on the apply that first creates the service. Once deployed, set it from
+# `terraform output -raw cloud_run_url` and re-apply.

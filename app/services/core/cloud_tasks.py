@@ -21,15 +21,10 @@ def _queue_path() -> str:
     )
 
 
-def enqueue_update(update: dict, base_url: str) -> None:
-    """Hand a Telegram update off to the task handler via Cloud Tasks.
-
-    base_url comes from the incoming webhook request rather than settings --
-    the Cloud Run service URL is self-referential and only known after the
-    first deploy (see terraform/cloud_tasks.tf).
-    """
+def enqueue_update(update: dict) -> None:
+    """Hand a Telegram update off to the task handler via Cloud Tasks."""
     settings = get_settings()
-    target_url = base_url.rstrip("/") + settings.task_handler_path
+    target_url = settings.task_handler_url
     task: dict = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,

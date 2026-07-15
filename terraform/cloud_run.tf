@@ -49,6 +49,10 @@ resource "google_cloud_run_v2_service" "app" {
         name  = "TASK_HANDLER_PATH"
         value = var.task_handler_path
       }
+      env {
+        name  = "SERVICE_URL"
+        value = var.service_url
+      }
       dynamic "env" {
         for_each = var.anthropic_base_url != "" ? [var.anthropic_base_url] : []
         content {

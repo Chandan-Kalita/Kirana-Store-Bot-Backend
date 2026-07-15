@@ -18,3 +18,12 @@ resource "google_project_iam_member" "run_sa_cloudtasks_enqueuer" {
   role    = "roles/cloudtasks.enqueuer"
   member  = "serviceAccount:${google_service_account.run_sa.email}"
 }
+
+# Creating a task with an OIDC token means run_sa "acts as" tasks_invoker_sa
+# to mint that token -- without this, CreateTask 403s with
+# "lacks IAM permission iam.serviceAccounts.actAs".
+resource "google_service_account_iam_member" "run_sa_can_act_as_tasks_invoker" {
+  service_account_id = google_service_account.tasks_invoker_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.run_sa.email}"
+}

@@ -17,5 +17,5 @@ async def telegram_webhook(request: Request):
     update = await request.json()
     # Hand off to Cloud Tasks and return immediately -- Telegram expects a
     # fast 200 or it'll consider the update undelivered and redeliver it.
-    enqueue_update(update, base_url=str(request.base_url))
+    enqueue_update(update)
     return {"ok": True}
