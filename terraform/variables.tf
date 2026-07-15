@@ -91,3 +91,14 @@ variable "deploy_branch" {
   type        = string
   default     = "master"
 }
+
+variable "github_connection_name" {
+  description = <<-EOT
+    Name of the Cloud Build 2nd-gen GitHub host connection. Must already
+    exist -- create it via:
+      gcloud builds connections create github <name> --region=<region> --project=<project_id>
+    (a one-time interactive OAuth step Terraform can't perform).
+  EOT
+  type        = string
+  default     = "AgenCloudBuild"
+}
