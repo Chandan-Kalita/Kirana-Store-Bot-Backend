@@ -1,0 +1,7 @@
+fastapi[standard]
+sqlmodel
+alembic
+asyncpg
+greenlet
+certifi
+python-dotenv
