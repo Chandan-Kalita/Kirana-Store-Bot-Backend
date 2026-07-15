@@ -6,8 +6,8 @@ from sqlalchemy.engine import Connection
 from sqlmodel import SQLModel
 
 from alembic import context
-from app.db import get_database_url, make_engine
-from app.models import *  # noqa: F401,F403  (registers tables on SQLModel.metadata)
+from app.services.helper.db import get_database_url, make_engine
+from app.services.helper.models import *  # noqa: F401,F403  (registers tables on SQLModel.metadata)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

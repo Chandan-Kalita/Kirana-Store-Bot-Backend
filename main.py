@@ -1,24 +1,13 @@
-from fastapi import Depends, FastAPI
-from sqlalchemy import text
-from sqlmodel.ext.asyncio.session import AsyncSession
+from fastapi import FastAPI
 
-from app.db import get_session
+from app.api import tasks, webhook
 
 app = FastAPI()
-
-
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
-
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
 
 
-@app.get("/db-check")
-async def db_check(session: AsyncSession = Depends(get_session)):
-    result = await session.exec(text("select 1"))
-    return {"db": result.scalar_one()}
-
+app.include_router(webhook.router)
+app.include_router(tasks.router)

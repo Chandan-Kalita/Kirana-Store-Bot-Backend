@@ -5,3 +5,6 @@ asyncpg
 greenlet
 certifi
 python-dotenv
+google-cloud-tasks
+google-auth
+pydantic-settings
