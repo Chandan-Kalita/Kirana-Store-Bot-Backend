@@ -2,3 +2,9 @@
 .env
 __pycache__
 Bigmantra Hiring Task.md
+
+terraform/.terraform
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/*.tfplan
