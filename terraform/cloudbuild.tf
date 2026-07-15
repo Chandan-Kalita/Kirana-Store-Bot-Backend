@@ -2,10 +2,28 @@ data "google_project" "current" {
   project_id = var.project_id
 }
 
+# Cloud Build's build-time validation rejects explicitly naming the legacy
+# PROJECT_NUMBER@cloudbuild.gserviceaccount.com SA on a trigger ("provide a
+# user-managed service account or leave unset") -- but 2nd-gen triggers
+# (repository_event_config below) require *some* explicit service_account
+# or trigger creation itself 400s. So: a real user-managed SA, standing in
+# for what the legacy default used to grant implicitly.
+resource "google_service_account" "cloudbuild_sa" {
+  project      = var.project_id
+  account_id   = "${var.service_name}-build"
+  display_name = "Cloud Build runtime identity for ${var.service_name} CI"
+}
+
 locals {
-  # Legacy Cloud Build service account -- what 1st-gen GitHub triggers run
-  # as by default (no custom service_account set on the trigger below).
-  cloudbuild_sa = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+  cloudbuild_sa = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
+# User-managed build SAs don't get log-writing for free like the legacy
+# default did -- without this, builds fail before running any steps.
+resource "google_project_iam_member" "cloudbuild_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = local.cloudbuild_sa
 }
 
 resource "google_project_iam_member" "cloudbuild_run_admin" {
@@ -80,15 +98,12 @@ resource "google_cloudbuildv2_repository" "app" {
 resource "google_cloudbuild_trigger" "deploy_on_push" {
   depends_on = [google_project_service.apis]
 
-  project     = var.project_id
-  location    = var.region
-  name        = "${var.service_name}-deploy"
-  description = "Build + deploy ${var.service_name} on push to ${var.deploy_branch}"
-  filename    = "cloudbuild.yaml"
-  # 2nd-gen (repository_event_config) triggers, unlike classic 1st-gen
-  # ones, don't fall back to the legacy Cloud Build SA implicitly -- it
-  # must be set explicitly or trigger creation 400s with no useful detail.
-  service_account = "projects/${var.project_id}/serviceAccounts/${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+  project         = var.project_id
+  location        = var.region
+  name            = "${var.service_name}-deploy"
+  description     = "Build + deploy ${var.service_name} on push to ${var.deploy_branch}"
+  filename        = "cloudbuild.yaml"
+  service_account = google_service_account.cloudbuild_sa.name
 
   repository_event_config {
     repository = google_cloudbuildv2_repository.app.id
