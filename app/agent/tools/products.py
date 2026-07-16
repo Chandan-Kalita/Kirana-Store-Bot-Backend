@@ -41,6 +41,56 @@ async def search_products(ctx: RunContext[AgentDeps], query: str) -> list[dict]:
     ]
 
 
+MAX_PAGE_SIZE = 100
+
+
+@agent.tool
+async def list_products(
+    ctx: RunContext[AgentDeps], offset: int = 0, limit: int = MAX_PAGE_SIZE
+) -> dict:
+    """List all products, alphabetically, paginated.
+
+    Use this for a full catalog listing (e.g. "list all products"). For
+    resolving a specific name to a SKU, use search_products instead. If
+    has_more is true in the response, call again with offset advanced by
+    the returned count to get the next page.
+
+    Args:
+        offset: Number of products to skip from the start of the list.
+        limit: Max products to return, capped at 100 regardless of the
+            value passed.
+    """
+    if offset < 0:
+        raise ModelRetry(f"offset must be >= 0, got {offset}.")
+    if limit <= 0:
+        raise ModelRetry(f"limit must be positive, got {limit}.")
+    limit = min(limit, MAX_PAGE_SIZE)
+
+    total = (
+        await ctx.deps.db.exec(select(func.count()).select_from(Product))
+    ).one()
+    stmt = select(Product).order_by(Product.name).offset(offset).limit(limit)
+    products = (await ctx.deps.db.exec(stmt)).all()
+
+    return {
+        "total": total,
+        "offset": offset,
+        "count": len(products),
+        "has_more": offset + len(products) < total,
+        "products": [
+            {
+                "sku": p.sku,
+                "name": p.name,
+                "unit": p.unit,
+                "qty_on_hand": p.qty_on_hand,
+                "mrp": p.mrp,
+                "gst_slab": p.gst_slab,
+            }
+            for p in products
+        ],
+    }
+
+
 @agent.tool
 async def add_product(
     ctx: RunContext[AgentDeps],

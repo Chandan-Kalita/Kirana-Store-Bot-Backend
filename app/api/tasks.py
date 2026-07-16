@@ -8,7 +8,7 @@ from app.agent.conversation import load_history, save_history
 from app.agent.deps import AgentDeps
 from app.services.core.telegram import send_message
 from app.services.helper.db import get_session
-from app.services.helper.models import Conversation
+from app.services.helper.models import Conversation, ConversationArchive
 from app.services.helper.settings import get_settings
 from app.services.helper.tasks_auth import verify_task_request
 
@@ -40,6 +40,9 @@ async def handle_task(
     if text.strip() == "/new":
         conversation = await session.get(Conversation, chat_id)
         if conversation is not None:
+            session.add(
+                ConversationArchive(chat_id=chat_id, messages=conversation.messages)
+            )
             await session.delete(conversation)
             await session.commit()
         await send_message(chat_id, "Started a new conversation.")

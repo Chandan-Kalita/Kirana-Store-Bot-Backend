@@ -89,3 +89,20 @@ class Conversation(SQLModel, table=True):
         ),
         default_factory=_utcnow,
     )
+
+
+class ConversationArchive(SQLModel, table=True):
+    __tablename__ = "conversation_archive"
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(PGUUID(as_uuid=True), primary_key=True),
+    )
+    chat_id: int = Field(sa_column=Column(BigInteger, nullable=False, index=True))
+    messages: list = Field(
+        default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    archived_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=_utcnow,
+    )
