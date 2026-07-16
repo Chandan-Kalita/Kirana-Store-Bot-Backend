@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     anthropic_base_url: str | None = None
     # points at DeepSeek's Anthropic-compatible endpoint, not api.anthropic.com
-    anthropic_model: str = "deepseek-chat"
+    anthropic_model: str = "deepseek-v4-pro"
 
     # invoice header -- swap get_shop_header()'s internals to a Preference
     # lookup once Phase 7 lands, callers don't change
