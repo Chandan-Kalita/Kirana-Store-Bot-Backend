@@ -167,3 +167,46 @@ class BillItem(SQLModel, table=True):
     # snapshot at add-time, not re-looked-up at finalize
     unit_price_at_sale: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
     gst_slab_at_sale: Decimal = Field(sa_column=Column(Numeric(4, 2), nullable=False))
+
+
+class Customer(SQLModel, table=True):
+    __table_args__ = (
+        # case-insensitive unique: "Ramesh" and "ramesh " on different days
+        # must resolve to the same customer, not fragment the balance
+        Index("ix_customer_name_unique", text("lower(name)"), unique=True),
+    )
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(PGUUID(as_uuid=True), primary_key=True),
+    )
+    name: str
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=_utcnow,
+    )
+
+
+class KhataEntry(SQLModel, table=True):
+    __tablename__ = "khata_entry"
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(PGUUID(as_uuid=True), primary_key=True),
+    )
+    customer_id: uuid.UUID = Field(
+        sa_column=Column(
+            PGUUID(as_uuid=True), ForeignKey("customer.id"), nullable=False, index=True
+        )
+    )
+    # positive = credit given (debt increases), negative = payment received --
+    # same sign convention as StockMovement.delta_qty. No mutable balance
+    # column anywhere: balance is always SUM(delta_amount), computed on
+    # demand, so concurrent entries never need row-locking the way stock
+    # decrements do.
+    delta_amount: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
+    note: str | None = Field(default=None)
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=_utcnow,
+    )
