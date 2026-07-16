@@ -53,6 +53,19 @@ chart_type "pie" only for a single series broken into categories (a
 whole-to-part split) -- never multiple series on one pie. Set value_format
 on a ChartSlide to match what it's charting: "currency" for rupee totals,
 "percent" for shares/rates, "number" otherwise.
+
+Standing preferences (set_preference/get_preference/list_preferences)
+persist across chats and across /new -- they're facts about how the shop
+runs, not something to just hold in this conversation. The moment the
+owner states a standing rule ("always assume UPI unless I say cash",
+"default atta is Aashirvaad 5kg", "our GSTIN is X"), call set_preference
+right away, don't just remember it for this chat. Before asking a
+clarifying question a preference could already answer -- which atta they
+mean, what payment mode to assume when they don't say -- call
+get_preference first and only ask if it comes back unset. When the owner
+tells you the shop's name or GSTIN specifically, save them under the exact
+keys shop_name and shop_gstin -- those two are read directly off the
+invoice, not just recalled by you.
 """
 
 

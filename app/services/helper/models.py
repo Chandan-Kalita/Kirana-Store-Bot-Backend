@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Literal
 
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Numeric, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -208,5 +209,26 @@ class KhataEntry(SQLModel, table=True):
     note: str | None = Field(default=None)
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=_utcnow,
+    )
+
+
+PreferenceKey = Literal[
+    "default_payment_mode",
+    "default_atta_sku",
+    "shop_name",
+    "shop_gstin",
+]
+
+
+class Preference(SQLModel, table=True):
+    # global, no chat_id -- a fact about how the shop runs, not about who's
+    # texting, and must survive independently of any one conversation
+    key: str = Field(primary_key=True)
+    value: str
+    updated_at: datetime = Field(
+        sa_column=Column(
+            DateTime(timezone=True), nullable=False, onupdate=_utcnow
+        ),
         default_factory=_utcnow,
     )

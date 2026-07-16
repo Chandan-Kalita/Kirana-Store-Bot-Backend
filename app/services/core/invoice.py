@@ -9,7 +9,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from app.services.core.analytics import STORE_TZ
 from app.services.core.gst import calc_line_gst
-from app.services.helper.models import Bill, BillItem, Product
+from app.services.helper.models import Bill, BillItem, Preference, Product
 from app.services.helper.settings import get_settings
 
 
@@ -26,11 +26,17 @@ def _format_qty(qty: Decimal) -> str:
 
 
 async def get_shop_header(db) -> dict:
-    """Shop name/GSTIN for invoice headers. Reads Settings for now -- takes
-    db so this can become a Preference lookup once Phase 7 lands, with no
-    caller needing to change."""
+    """Shop name/GSTIN for invoice headers. Reads Preference first -- the
+    owner sets these via set_preference -- falling back to the Settings
+    defaults so a fresh, never-configured install still produces a valid
+    invoice instead of erroring."""
     settings = get_settings()
-    return {"shop_name": settings.shop_name, "shop_gstin": settings.shop_gstin}
+    name_pref = await db.get(Preference, "shop_name")
+    gstin_pref = await db.get(Preference, "shop_gstin")
+    return {
+        "shop_name": name_pref.value if name_pref else settings.shop_name,
+        "shop_gstin": gstin_pref.value if gstin_pref else settings.shop_gstin,
+    }
 
 
 def render_invoice_pdf(
