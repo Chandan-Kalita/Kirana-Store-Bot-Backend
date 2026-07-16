@@ -1,8 +1,13 @@
-from pydantic_ai import Agent
+from datetime import datetime
+
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
+from sqlmodel import select
 
 from app.agent.deps import AgentDeps
+from app.services.core.analytics import STORE_TZ
+from app.services.helper.models import Preference
 from app.services.helper.settings import get_settings
 
 SYSTEM_PROMPT = """\
@@ -54,18 +59,18 @@ whole-to-part split) -- never multiple series on one pie. Set value_format
 on a ChartSlide to match what it's charting: "currency" for rupee totals,
 "percent" for shares/rates, "number" otherwise.
 
-Standing preferences (set_preference/get_preference/list_preferences)
-persist across chats and across /new -- they're facts about how the shop
-runs, not something to just hold in this conversation. The moment the
-owner states a standing rule ("always assume UPI unless I say cash",
-"default atta is Aashirvaad 5kg", "our GSTIN is X"), call set_preference
-right away, don't just remember it for this chat. Before asking a
-clarifying question a preference could already answer -- which atta they
-mean, what payment mode to assume when they don't say -- call
-get_preference first and only ask if it comes back unset. When the owner
-tells you the shop's name or GSTIN specifically, save them under the exact
-keys shop_name and shop_gstin -- those two are read directly off the
-invoice, not just recalled by you.
+Standing preferences persist across chats and across /new -- they're facts
+about how the shop runs, not something to just hold in this conversation.
+Known preferences are listed below in every turn, so use them directly
+instead of asking something they already answer (e.g. don't ask which
+payment mode if default_payment_mode is listed, don't ask which atta if
+default_atta_sku is listed). The moment the owner states a new standing
+rule ("always assume UPI unless I say cash", "default atta is Aashirvaad
+5kg", "our GSTIN is X") or changes an existing one, call set_preference
+right away, don't just remember it for this chat -- it won't otherwise
+survive /new. When the owner tells you the shop's name or GSTIN
+specifically, save them under the exact keys shop_name and shop_gstin --
+those two are read directly off the invoice, not just recalled by you.
 """
 
 
@@ -86,3 +91,20 @@ agent = Agent(
     deps_type=AgentDeps,
     system_prompt=SYSTEM_PROMPT,
 )
+
+
+@agent.system_prompt
+def _current_date() -> str:
+    now = datetime.now(STORE_TZ)
+    return f"Today's date is {now:%Y-%m-%d} ({now:%A}), Asia/Kolkata time."
+
+
+@agent.system_prompt
+async def _known_preferences(ctx: RunContext[AgentDeps]) -> str | None:
+    # unconditional, same as _current_date -- a preference only helps if
+    # the model doesn't have to remember to go look it up first
+    prefs = (await ctx.deps.db.exec(select(Preference))).all()
+    if not prefs:
+        return None
+    lines = "\n".join(f"- {p.key} = {p.value}" for p in prefs)
+    return f"Known standing preferences:\n{lines}"
