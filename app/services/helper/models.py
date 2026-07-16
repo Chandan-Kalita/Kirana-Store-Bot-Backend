@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Column, DateTime, ForeignKey, Numeric
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Numeric
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlmodel import Field, SQLModel
 
@@ -69,5 +70,22 @@ class StockMovement(SQLModel, table=True):
     reference_id: int | None = Field(default=None)
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=_utcnow,
+    )
+
+
+class Conversation(SQLModel, table=True):
+    # one row per Telegram chat -- chat_id is already unique per chat, no
+    # separate surrogate id needed. BigInteger: Telegram chat ids can exceed
+    # postgres's 32-bit int4 range.
+    chat_id: int = Field(sa_column=Column(BigInteger, primary_key=True))
+    # serialized Pydantic AI message history (see app/agent/conversation.py)
+    messages: list = Field(
+        default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(
+            DateTime(timezone=True), nullable=False, onupdate=_utcnow
+        ),
         default_factory=_utcnow,
     )

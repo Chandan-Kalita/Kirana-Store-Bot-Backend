@@ -1,7 +1,6 @@
 .venv
 .env
 __pycache__
-Bigmantra Hiring Task.md
 
 terraform/.terraform
 terraform/*.tfstate

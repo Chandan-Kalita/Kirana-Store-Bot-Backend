@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     webhook_secret: str
     anthropic_api_key: str
     anthropic_base_url: str | None = None
+    # Pointed at DeepSeek's Anthropic-compatible endpoint (anthropic_base_url)
+    # rather than api.anthropic.com -- deepseek-chat reasons well enough to
+    # handle ambiguous requests/clarifying questions at a fraction of the
+    # cost, which matters for an always-on demo bot.
+    anthropic_model: str = "deepseek-chat"
 
     # Cloud Run/Cloud Tasks wiring -- set by terraform/cloud_run.tf on the
     # deployed service. task_handler_path defaults to match the Terraform

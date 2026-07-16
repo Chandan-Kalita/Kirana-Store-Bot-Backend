@@ -4,3 +4,8 @@ region     = "asia-southeast1"
 # Leave unset for the first `apply` (service doesn't exist yet). Once
 # deployed, set this to `terraform output -raw cloud_run_url` and re-apply.
 service_url = "https://kirana-store-agent-aaxccgnaia-as.a.run.app"
+
+# DeepSeek's Anthropic-compatible endpoint. Leave "" to use api.anthropic.com
+# instead -- just make sure anthropic_model in Settings matches whichever
+# provider this points at.
+anthropic_base_url = "https://api.deepseek.com/anthropic"
