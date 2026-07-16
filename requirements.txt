@@ -9,3 +9,4 @@ google-cloud-tasks==2.23.0
 google-auth==2.56.0
 pydantic-settings==2.14.2
 pydantic-ai-slim[anthropic]==2.10.0
+tzdata==2026.3
