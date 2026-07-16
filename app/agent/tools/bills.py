@@ -67,7 +67,7 @@ def _bill_view(bill: Bill, rows: list[tuple[BillItem, Product]]) -> dict:
     }
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def start_bill(
     ctx: RunContext[AgentDeps], customer_name: str | None = None
 ) -> dict:
@@ -97,7 +97,7 @@ async def start_bill(
     return view
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def set_item_qty(ctx: RunContext[AgentDeps], sku: str, qty: Decimal) -> dict:
     """Set (or remove) a line item's quantity on the current draft bill.
 
@@ -177,7 +177,7 @@ async def set_item_qty(ctx: RunContext[AgentDeps], sku: str, qty: Decimal) -> di
     return view
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def view_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     """Show the current draft bill's line items and computed totals.
 
@@ -192,7 +192,7 @@ async def view_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     return _bill_view(bill, rows)
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def cancel_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     """Hard-delete the current draft bill and its line items.
 
@@ -214,7 +214,7 @@ async def cancel_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     return {"cancelled": True, "bill_id": str(bill.id)}
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def finalize_bill(
     ctx: RunContext[AgentDeps],
     payment_mode: PaymentMode,

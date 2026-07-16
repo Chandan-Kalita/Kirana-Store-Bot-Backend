@@ -12,7 +12,7 @@ from app.services.helper.models import Product, StockMovement
 Unit = Literal["kg", "g", "litre", "ml", "packet", "dozen", "piece"]
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def search_products(ctx: RunContext[AgentDeps], query: str) -> list[dict]:
     """Search products by name or SKU, case-insensitive partial match.
 
@@ -44,7 +44,7 @@ async def search_products(ctx: RunContext[AgentDeps], query: str) -> list[dict]:
 MAX_PAGE_SIZE = 100
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def list_products(
     ctx: RunContext[AgentDeps], offset: int = 0, limit: int = MAX_PAGE_SIZE
 ) -> dict:
@@ -91,7 +91,7 @@ async def list_products(
     }
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def add_product(
     ctx: RunContext[AgentDeps],
     sku: str,
@@ -154,7 +154,7 @@ async def add_product(
     }
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def receive_stock(
     ctx: RunContext[AgentDeps],
     sku: str,
@@ -207,7 +207,7 @@ async def receive_stock(
     }
 
 
-@agent.tool
+@agent.tool(sequential=True)
 async def list_low_stock(
     ctx: RunContext[AgentDeps], threshold: Decimal | None = None
 ) -> list[dict]:
