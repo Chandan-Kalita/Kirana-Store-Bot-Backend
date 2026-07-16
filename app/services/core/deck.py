@@ -93,11 +93,17 @@ def _add_chart_slide(prs: Presentation, spec: ChartSlide) -> None:
     chart_data.categories = spec.categories
     for series in spec.series:
         chart_data.add_series(series.name, series.values)
-    slide.shapes.add_chart(
+    graphic_frame = slide.shapes.add_chart(
         _CHART_TYPES[spec.chart_type],
         Inches(0.5), Inches(1.5), Inches(9), Inches(5),
         chart_data,
     )
+    chart = graphic_frame.chart
+    if len(spec.series) > 1:
+        chart.has_legend = True
+        # without this the legend can render on top of the plot area
+        # instead of beside it, cramming the chart
+        chart.legend.include_in_layout = False
 
 
 _RENDERERS = {
@@ -111,9 +117,18 @@ _RENDERERS = {
 def render_deck(title: str, slides: list) -> bytes:
     """Deterministically build a python-pptx presentation from SlideSpec
     objects: one deck title slide up front, then one slide per spec.
-    ChartSlide gets a native pptx chart object, not a pasted image."""
+    ChartSlide gets a native pptx chart object, not a pasted image.
+
+    If the model's own slides already open with a TitleSlide, that one is
+    used instead of auto-generating a second one -- the model's may carry
+    a subtitle (e.g. a date range) that the auto-generated one never sets.
+    """
     prs = Presentation()
-    _add_title_slide(prs, TitleSlide(title=title))
+    if slides and isinstance(slides[0], TitleSlide):
+        _add_title_slide(prs, slides[0])
+        slides = slides[1:]
+    else:
+        _add_title_slide(prs, TitleSlide(title=title))
     for spec in slides:
         _RENDERERS[spec.type](prs, spec)
 
