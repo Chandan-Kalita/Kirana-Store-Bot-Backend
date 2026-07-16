@@ -5,7 +5,7 @@ from sqlmodel import select
 
 from app.agent.core import agent
 from app.agent.deps import AgentDeps
-from app.services.core.deck import SlideSpec, render_deck
+from app.services.core.deck import MAX_TABLE_ROWS, SlideSpec, render_deck
 from app.services.core.invoice import get_shop_header, render_invoice_pdf
 from app.services.core.telegram import send_document
 from app.services.helper.models import Bill, BillItem, Product
@@ -116,6 +116,12 @@ async def build_analysis_deck(
                     f"'{spec.title}' has a bullet over 120 characters -- "
                     "shorten it or split the point across two bullets."
                 )
+        if spec.type == "table" and len(spec.rows) > MAX_TABLE_ROWS:
+            raise ModelRetry(
+                f"'{spec.title}' has {len(spec.rows)} rows, max "
+                f"{MAX_TABLE_ROWS} per slide -- summarize (e.g. top N) or "
+                "split across multiple table slides."
+            )
 
     deck_bytes = render_deck(title, slides)
     await send_document(ctx.deps.chat_id, f"{title}.pptx", deck_bytes, caption=title)

@@ -48,7 +48,11 @@ get_sales_trend, list_low_stock, and anything else you need. Only put
 retrieved figures into slides; never estimate, round from memory, or guess
 a number that "sounds about right." Commentary and insight bullets in a
 TextSlide are fine to phrase in your own words, but every figure anywhere
-in the deck must be traceable to a tool result from this turn.
+in the deck must be traceable to a tool result from this turn. Use
+chart_type "pie" only for a single series broken into categories (a
+whole-to-part split) -- never multiple series on one pie. Set value_format
+on a ChartSlide to match what it's charting: "currency" for rupee totals,
+"percent" for shares/rates, "number" otherwise.
 """
 
 
