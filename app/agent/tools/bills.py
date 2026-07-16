@@ -209,10 +209,8 @@ async def cancel_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     ).all()
     for item in items:
         await ctx.deps.db.delete(item)
-    # flush the item deletes before deleting the bill -- Bill/BillItem have
-    # no ORM relationship() between them, so the unit-of-work has no
-    # dependency info to order a single flush correctly and can violate the
-    # bill_item -> bill FK.
+    # flush items before deleting the bill, no relationship() to order this
+    # for us and it'll trip the FK otherwise
     await ctx.deps.db.flush()
 
     await ctx.deps.db.delete(bill)
@@ -270,25 +268,17 @@ async def request_finalize_confirmation(
 
 
 async def finalize_confirmed_bill(db, chat_id: int) -> dict:
-    """Finalize the current draft bill: deducts stock and freezes totals.
+    """Deduct stock and freeze totals for the current draft bill.
 
-    Only ever called from the Telegram Confirm-button callback handler in
-    tasks.py -- deliberately NOT an @agent.tool, so there is no tool call an
-    LLM can make (correctly or otherwise) that reaches this. Reads
-    payment_mode/payment_ref off the bill row, stashed there earlier by
+    Called only from the Confirm-button callback in tasks.py -- not an
+    @agent.tool, so the LLM has no way to reach this directly. Reads
+    payment_mode/payment_ref off the bill, set earlier by
     request_finalize_confirmation.
 
-    Refuses, leaving everything untouched, if any line would oversell a
-    product's current stock or is priced below the product's cost price.
-    Safe to call again for the same chat after a successful finalize: since
-    finalize flips the bill's status away from "draft", a repeat call (e.g.
-    a duplicate callback delivery) naturally finds no draft left and
-    instead reports the already-finalized bill, rather than
-    double-deducting stock.
-
-    Returns {"ok": False, "message": ...} on refusal, or
-    {"ok": True, ...breakdown...} on success (with "already_finalized": True
-    if this chat's draft was already finalized by an earlier call).
+    Refuses (returns {"ok": False, "message": ...}) if a line would
+    oversell stock or sell below cost. Idempotent: finalize flips status
+    away from "draft", so a repeat call just reports the already-finalized
+    bill instead of double-deducting.
     """
     bill = (
         await db.exec(
@@ -325,9 +315,8 @@ async def finalize_confirmed_bill(db, chat_id: int) -> dict:
             "message": "No payment mode on file for this draft.",
         }
 
-    # Lock the involved products in a consistent (sorted) order -- two
-    # concurrent finalizes touching the same products in different orders
-    # is a classic deadlock setup; sorting first avoids it.
+    # lock products in a fixed order to avoid deadlocking against another
+    # finalize touching the same products
     product_ids = sorted({item.product_id for item, _ in rows})
     locked_products = (
         await db.exec(

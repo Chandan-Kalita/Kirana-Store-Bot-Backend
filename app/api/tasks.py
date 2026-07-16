@@ -8,7 +8,6 @@ from app.agent.conversation import load_history, save_history
 from app.agent.deps import AgentDeps
 from app.agent.tools.bills import finalize_confirmed_bill
 from app.services.core.telegram import (
-    answer_callback_query,
     edit_message_text,
     send_message,
     send_message_with_confirm_buttons,
@@ -84,9 +83,9 @@ async def handle_task(
 async def _handle_finalize_callback(session: AsyncSession, callback: dict) -> None:
     """Handle a tap on the Confirm/Cancel buttons -- entirely outside the
     agent loop. The LLM proposed the bill; only this deterministic path can
-    actually finalize it."""
-    await answer_callback_query(callback["id"])
-
+    actually finalize it. The callback_query itself is already answered by
+    webhook.py before this task was even enqueued -- don't answer it again
+    here, Telegram rejects a second answer to the same callback_query_id."""
     data = callback.get("data", "")
     chat_id = callback["message"]["chat"]["id"]
     message_id = callback["message"]["message_id"]

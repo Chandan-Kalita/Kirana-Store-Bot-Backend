@@ -4,10 +4,8 @@ from app.services.helper.settings import get_settings
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 
-# Confirm/Cancel keyboard attached to the finalize-confirmation message --
-# callback_data stays short and doesn't carry a bill id: a chat can have at
-# most one draft bill at a time, so "the current draft for this chat" is
-# enough to resolve on tap.
+# no bill id in callback_data -- a chat only ever has one draft, so "the
+# current draft for this chat" is enough on tap
 _FINALIZE_KEYBOARD = {
     "inline_keyboard": [
         [

@@ -22,9 +22,7 @@ def get_database_url() -> str:
 
 
 def make_engine(**kwargs) -> AsyncEngine:
-    # Neon closes idle connections server-side; without pre_ping the pool
-    # hands out a stale one and the first query on it dies with
-    # "connection is closed" instead of transparently reconnecting.
+    # Neon closes idle connections server-side, pre_ping avoids handing out a stale one
     kwargs.setdefault("pool_pre_ping", True)
     return create_async_engine(
         get_database_url(),

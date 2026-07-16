@@ -7,7 +7,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 class AgentDeps:
     db: AsyncSession
     chat_id: int
-    # set by request_finalize_confirmation() to tell tasks.py to attach
-    # Confirm/Cancel buttons to this turn's reply instead of sending it as
-    # plain text.
+    # set by request_finalize_confirmation() -- tells tasks.py to send
+    # Confirm/Cancel buttons with the reply instead of plain text
     pending_confirmation: bool = False

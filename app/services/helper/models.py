@@ -7,12 +7,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlmodel import Field, SQLModel
 
-# Table models get defined here (or in submodules imported below) and
-# registered on SQLModel.metadata, which alembic/env.py targets for autogenerate.
-
-# unit/reason are plain strings at the DB layer -- validated against
-# Unit/StockMovementReason enums (defined at the application/schema layer,
-# not here) before hitting the model.
+# table models get defined here so alembic/env.py's autogenerate can see them
+# on SQLModel.metadata
 
 
 def _utcnow() -> datetime:
@@ -32,10 +28,7 @@ class Product(SQLModel, table=True):
     mrp: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
     gst_slab: Decimal = Field(sa_column=Column(Numeric(4, 2), nullable=False))
     hsn_code: str
-    # canonical unit per product is whatever `unit` says (e.g. kg for loose
-    # dal/rice/sugar, piece for packaged goods) -- qty_on_hand and
-    # reorder_level are always expressed in that unit, fractional allowed
-    # (0.25 kg) for is_loose products.
+    # qty_on_hand/reorder_level are in whatever unit says, fractional for loose items
     qty_on_hand: Decimal = Field(sa_column=Column(Numeric(10, 3), nullable=False))
     reorder_level: Decimal = Field(sa_column=Column(Numeric(10, 3), nullable=False))
     created_at: datetime = Field(
@@ -65,8 +58,7 @@ class StockMovement(SQLModel, table=True):
     # positive for receiving, negative for a sale/adjustment
     delta_qty: Decimal = Field(sa_column=Column(Numeric(10, 3), nullable=False))
     reason: str
-    # set to the originating Bill's id for reason="sale" movements; null for
-    # receive/adjustment.
+    # the Bill id for reason="sale", null otherwise
     reference_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(PGUUID(as_uuid=True), ForeignKey("bill.id"), nullable=True),
@@ -78,11 +70,10 @@ class StockMovement(SQLModel, table=True):
 
 
 class Conversation(SQLModel, table=True):
-    # one row per Telegram chat -- chat_id is already unique per chat, no
-    # separate surrogate id needed. BigInteger: Telegram chat ids can exceed
-    # postgres's 32-bit int4 range.
+    # one row per chat, chat_id is the pk -- BigInteger since Telegram ids
+    # can exceed int4
     chat_id: int = Field(sa_column=Column(BigInteger, primary_key=True))
-    # serialized Pydantic AI message history (see app/agent/conversation.py)
+    # serialized Pydantic AI message history, see app/agent/conversation.py
     messages: list = Field(
         default_factory=list, sa_column=Column(JSONB, nullable=False)
     )
@@ -114,8 +105,7 @@ class ConversationArchive(SQLModel, table=True):
 class Bill(SQLModel, table=True):
     __tablename__ = "bill"
     __table_args__ = (
-        # at most one draft bill per chat -- the DB-level guardrail against
-        # two bills in flight at once corrupting stock, not just app logic.
+        # at most one draft bill per chat, enforced at the DB level
         Index(
             "ix_bill_chat_id_draft_unique",
             "chat_id",
@@ -130,14 +120,11 @@ class Bill(SQLModel, table=True):
     )
     chat_id: int = Field(sa_column=Column(BigInteger, nullable=False, index=True))
     status: str = Field(default="draft")
-    # for khata linkage in Phase 4
-    customer_name: str | None = Field(default=None)
-    # only ever set at finalize, never during drafting
+    customer_name: str | None = Field(default=None)  # for khata linkage later
     payment_mode: str | None = Field(default=None)
     payment_ref: str | None = Field(default=None)
-    # only computed and frozen onto the row at finalize -- while drafting,
-    # totals are derived on demand from BillItem rows (see gst.py) so there's
-    # no denormalized running total to drift out of sync with the line items.
+    # totals stay null while drafting -- computed on demand from BillItem
+    # rows, frozen here only at finalize
     subtotal: Decimal | None = Field(
         default=None, sa_column=Column(Numeric(10, 2), nullable=True)
     )
@@ -177,8 +164,6 @@ class BillItem(SQLModel, table=True):
         )
     )
     qty: Decimal = Field(sa_column=Column(Numeric(10, 3), nullable=False))
-    # snapshot at add-time, not looked up fresh at finalize -- a mid-
-    # conversation price change elsewhere shouldn't silently alter an
-    # in-progress bill.
+    # snapshot at add-time, not re-looked-up at finalize
     unit_price_at_sale: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
     gst_slab_at_sale: Decimal = Field(sa_column=Column(Numeric(4, 2), nullable=False))
