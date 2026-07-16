@@ -99,7 +99,19 @@ def _add_chart_slide(prs: Presentation, spec: ChartSlide) -> None:
         chart_data,
     )
     chart = graphic_frame.chart
-    if len(spec.series) > 1:
+
+    if spec.chart_type == "pie":
+        show_legend = len(spec.categories) > 1
+        plot = chart.plots[0]
+        plot.has_data_labels = True
+        plot.data_labels.show_percentage = True
+        plot.data_labels.show_value = False
+        plot.data_labels.number_format = "0%"
+        plot.data_labels.number_format_is_linked = False
+    else:
+        show_legend = len(spec.series) > 1
+
+    if show_legend:
         chart.has_legend = True
         # without this the legend can render on top of the plot area
         # instead of beside it, cramming the chart

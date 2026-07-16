@@ -103,6 +103,20 @@ async def build_analysis_deck(
             f"Need 1-{MAX_DECK_SLIDES} slides, got {len(slides)}."
         )
 
+    for spec in slides:
+        if spec.type == "text":
+            if len(spec.bullets) > 6:
+                raise ModelRetry(
+                    f"'{spec.title}' has {len(spec.bullets)} bullets, max 6 per "
+                    "slide -- split this across multiple text slides."
+                )
+            long_bullets = [b for b in spec.bullets if len(b) > 120]
+            if long_bullets:
+                raise ModelRetry(
+                    f"'{spec.title}' has a bullet over 120 characters -- "
+                    "shorten it or split the point across two bullets."
+                )
+
     deck_bytes = render_deck(title, slides)
     await send_document(ctx.deps.chat_id, f"{title}.pptx", deck_bytes, caption=title)
     return f"Sent '{title}' ({len(slides)} slides)."
