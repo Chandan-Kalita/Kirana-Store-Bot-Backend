@@ -371,6 +371,12 @@ async def finalize_confirmed_bill(db, chat_id: int) -> dict:
             select(Bill)
             .where(Bill.chat_id == chat_id, Bill.status == "draft")
             .with_for_update()
+            # SQLAlchemy's identity map returns an already-loaded instance
+            # as-is on a re-query, ignoring the freshly locked row, unless
+            # told to overwrite it -- without this, a Bill read earlier in
+            # this same session would silently keep its stale attributes
+            # even after a real FOR UPDATE lock was acquired
+            .execution_options(populate_existing=True)
         )
     ).first()
 
@@ -406,7 +412,19 @@ async def finalize_confirmed_bill(db, chat_id: int) -> dict:
     product_ids = sorted({item.product_id for item, _ in rows})
     locked_products = (
         await db.exec(
-            select(Product).where(Product.id.in_(product_ids)).with_for_update()
+            select(Product)
+            .where(Product.id.in_(product_ids))
+            .with_for_update()
+            # the join above (_load_draft_items_with_products) already
+            # loaded these same Product rows unlocked, into this session's
+            # identity map -- without populate_existing, this re-query
+            # would still acquire the row lock at the DB level but hand
+            # back the earlier, stale, pre-lock object instead of the
+            # fresh one, silently defeating the oversell guard under
+            # concurrency (confirmed empirically: two concurrent finalizes
+            # both read qty_on_hand=10 and both succeeded, one overwriting
+            # the other's already-committed decrement)
+            .execution_options(populate_existing=True)
         )
     ).all()
     products_by_id = {p.id: p for p in locked_products}

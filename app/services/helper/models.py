@@ -3,7 +3,16 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Numeric, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlmodel import Field, SQLModel
@@ -17,6 +26,12 @@ def _utcnow() -> datetime:
 
 
 class Product(SQLModel, table=True):
+    __table_args__ = (
+        CheckConstraint("qty_on_hand >= 0", name="ck_product_qty_on_hand_non_negative"),
+        CheckConstraint("cost_price >= 0", name="ck_product_cost_price_non_negative"),
+        CheckConstraint("mrp >= 0", name="ck_product_mrp_non_negative"),
+    )
+
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
         sa_column=Column(PGUUID(as_uuid=True), primary_key=True),
@@ -149,6 +164,9 @@ class Bill(SQLModel, table=True):
 
 class BillItem(SQLModel, table=True):
     __tablename__ = "bill_item"
+    __table_args__ = (
+        CheckConstraint("qty > 0", name="ck_bill_item_qty_positive"),
+    )
 
     id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
