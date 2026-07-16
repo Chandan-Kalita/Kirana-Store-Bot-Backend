@@ -193,6 +193,89 @@ async def view_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     return _bill_view(bill, rows)
 
 
+MAX_BILL_PAGE_SIZE = 20
+
+
+@agent.tool(sequential=True)
+async def list_past_bills(
+    ctx: RunContext[AgentDeps],
+    customer_name: str | None = None,
+    offset: int = 0,
+    limit: int = MAX_BILL_PAGE_SIZE,
+) -> dict:
+    """List finalized bills for this chat, most recent first.
+
+    Use this for "what did I sell yesterday", "show me Ramesh's past
+    bills", "find that bill for X" type requests. Only finalized bills
+    show up here -- a bill still being built is a draft, not a past bill
+    yet, see view_draft_bill for that.
+
+    Args:
+        customer_name: Optional filter, partial case-insensitive match
+            against the bill's customer name.
+        offset: Number of bills to skip, for paging past the first page.
+        limit: Max bills to return, capped at 20 regardless of the value
+            passed (each bill includes its full item list).
+    """
+    if offset < 0:
+        raise ModelRetry(f"offset must be >= 0, got {offset}.")
+    if limit <= 0:
+        raise ModelRetry(f"limit must be positive, got {limit}.")
+    limit = min(limit, MAX_BILL_PAGE_SIZE)
+
+    filters = [Bill.chat_id == ctx.deps.chat_id, Bill.status == "finalized"]
+    if customer_name:
+        filters.append(Bill.customer_name.ilike(f"%{customer_name}%"))
+
+    total = (
+        await ctx.deps.db.exec(select(func.count()).select_from(Bill).where(*filters))
+    ).one()
+    stmt = (
+        select(Bill)
+        .where(*filters)
+        .order_by(Bill.finalized_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    bills = (await ctx.deps.db.exec(stmt)).all()
+
+    results = []
+    for bill in bills:
+        rows = await _load_draft_items_with_products(ctx.deps.db, bill.id)
+        results.append(
+            {
+                "bill_id": str(bill.id),
+                "customer_name": bill.customer_name,
+                "payment_mode": bill.payment_mode,
+                "payment_ref": bill.payment_ref,
+                "finalized_at": bill.finalized_at.isoformat()
+                if bill.finalized_at
+                else None,
+                "subtotal": bill.subtotal,
+                "cgst_total": bill.cgst_total,
+                "sgst_total": bill.sgst_total,
+                "total_amount": bill.total_amount,
+                "items": [
+                    {
+                        "sku": product.sku,
+                        "name": product.name,
+                        "qty": item.qty,
+                        "unit_price": item.unit_price_at_sale,
+                    }
+                    for item, product in rows
+                ],
+            }
+        )
+
+    return {
+        "total": total,
+        "offset": offset,
+        "count": len(results),
+        "has_more": offset + len(results) < total,
+        "bills": results,
+    }
+
+
 @agent.tool(sequential=True)
 async def cancel_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     """Hard-delete the current draft bill and its line items.

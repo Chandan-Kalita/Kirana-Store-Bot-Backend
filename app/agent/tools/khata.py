@@ -20,6 +20,78 @@ async def _get_balance(db, customer_id) -> Decimal:
     return total if total is not None else Decimal("0")
 
 
+async def _load_entries(
+    db, customer_id, *, limit: int | None = None, ascending: bool = False
+) -> list[dict]:
+    stmt = select(KhataEntry).where(KhataEntry.customer_id == customer_id)
+    stmt = stmt.order_by(
+        KhataEntry.created_at.asc() if ascending else KhataEntry.created_at.desc()
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    entries = (await db.exec(stmt)).all()
+    return [
+        {
+            "delta_amount": entry.delta_amount,
+            "note": entry.note,
+            "created_at": entry.created_at.isoformat(),
+        }
+        for entry in entries
+    ]
+
+
+MAX_CUSTOMER_PAGE_SIZE = 50
+
+
+@agent.tool(sequential=True)
+async def list_customers(
+    ctx: RunContext[AgentDeps], offset: int = 0, limit: int = MAX_CUSTOMER_PAGE_SIZE
+) -> dict:
+    """List all khata customers, alphabetically, paginated.
+
+    Each customer includes their current balance and their 5 most recent
+    khata entries, for a quick browse of who owes what without a separate
+    call per customer. Use search_customers instead to resolve one specific
+    name.
+
+    Args:
+        offset: Number of customers to skip from the start of the list.
+        limit: Max customers to return, capped at 50 regardless of the
+            value passed.
+    """
+    if offset < 0:
+        raise ModelRetry(f"offset must be >= 0, got {offset}.")
+    if limit <= 0:
+        raise ModelRetry(f"limit must be positive, got {limit}.")
+    limit = min(limit, MAX_CUSTOMER_PAGE_SIZE)
+
+    total = (
+        await ctx.deps.db.exec(select(func.count()).select_from(Customer))
+    ).one()
+    stmt = select(Customer).order_by(Customer.name).offset(offset).limit(limit)
+    customers = (await ctx.deps.db.exec(stmt)).all()
+
+    results = []
+    for customer in customers:
+        balance = await _get_balance(ctx.deps.db, customer.id)
+        recent_entries = await _load_entries(ctx.deps.db, customer.id, limit=5)
+        results.append(
+            {
+                "name": customer.name,
+                "balance": balance,
+                "recent_entries": recent_entries,
+            }
+        )
+
+    return {
+        "total": total,
+        "offset": offset,
+        "count": len(results),
+        "has_more": offset + len(results) < total,
+        "customers": results,
+    }
+
+
 @agent.tool(sequential=True)
 async def search_customers(ctx: RunContext[AgentDeps], query: str) -> list[dict]:
     """Search khata customers by name, case-insensitive partial match.
@@ -135,10 +207,11 @@ async def record_payment(
 
 @agent.tool(sequential=True)
 async def get_balance(ctx: RunContext[AgentDeps], customer_name: str) -> dict:
-    """Get a customer's current khata balance and recent activity.
+    """Get one customer's current khata balance and their full entry history.
 
-    Exact-match lookup, case-insensitive. If there's no exact match, offers
-    close name matches instead of a flat dead end.
+    Exact-match lookup only, case-insensitive. If there's no exact match,
+    use search_customers or list_customers to find the right name first --
+    this tool doesn't fuzzy-match.
 
     Args:
         customer_name: Customer's name, exact (case-insensitive).
@@ -149,46 +222,12 @@ async def get_balance(ctx: RunContext[AgentDeps], customer_name: str) -> dict:
         )
     ).first()
     if customer is None:
-        # same ILIKE matcher as search_customers, capped at 5 so the model
-        # (or the owner, if it relays these) has concrete candidates with
-        # balances to pick from instead of a flat dead end
-        close = (
-            await ctx.deps.db.exec(
-                select(Customer)
-                .where(Customer.name.ilike(f"%{customer_name}%"))
-                .limit(5)
-            )
-        ).all()
-        if close:
-            matches = [
-                {"name": c.name, "balance": await _get_balance(ctx.deps.db, c.id)}
-                for c in close
-            ]
-            raise ModelRetry(
-                f"No customer named '{customer_name}'. Close matches: {matches}."
-            )
-        raise ModelRetry(f"No customer named '{customer_name}' on khata.")
+        raise ModelRetry(
+            f"No customer named '{customer_name}' on khata. Use search_customers "
+            "or list_customers to find the right name."
+        )
 
     balance = await _get_balance(ctx.deps.db, customer.id)
+    entries = await _load_entries(ctx.deps.db, customer.id, ascending=True)
 
-    recent = (
-        await ctx.deps.db.exec(
-            select(KhataEntry)
-            .where(KhataEntry.customer_id == customer.id)
-            .order_by(KhataEntry.created_at.desc())
-            .limit(50)
-        )
-    ).all()
-
-    return {
-        "name": customer.name,
-        "balance": balance,
-        "recent_entries": [
-            {
-                "delta_amount": entry.delta_amount,
-                "note": entry.note,
-                "created_at": entry.created_at.isoformat(),
-            }
-            for entry in recent
-        ],
-    }
+    return {"name": customer.name, "balance": balance, "entries": entries}
