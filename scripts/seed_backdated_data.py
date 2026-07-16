@@ -29,7 +29,7 @@ from app.services.helper.models import (
 random.seed(20260716)
 
 WINDOW_DAYS = 180
-CHAT_IDS = [1111111111, 2222222222]
+CHAT_ID = 1389108245
 
 PRODUCTS = [
     # sku, name, unit, is_loose, cost, mrp, gst, hsn, reorder_level, initial_qty
@@ -158,7 +158,6 @@ async def seed_bills(session: AsyncSession, products: dict[str, Product]) -> Non
             continue
         for _ in range(random.randint(1, 4)):
             finalized_at = _random_finalized_at(day_offset)
-            chat_id = random.choice(CHAT_IDS)
             customer_name = random.choice([None, None, *CUSTOMERS])
             payment_mode = random.choice(PAYMENT_MODES)
 
@@ -183,7 +182,7 @@ async def seed_bills(session: AsyncSession, products: dict[str, Product]) -> Non
                 lines.append((product, qty))
 
             bill = Bill(
-                chat_id=chat_id,
+                chat_id=CHAT_ID,
                 status="finalized",
                 customer_name=customer_name,
                 payment_mode=payment_mode,

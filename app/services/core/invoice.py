@@ -13,6 +13,18 @@ from app.services.helper.models import Bill, BillItem, Product
 from app.services.helper.settings import get_settings
 
 
+def _format_qty(qty: Decimal) -> str:
+    """2 -> "2", not "2.000"; 0.25 -> "0.25", not "0.250". Deliberately not
+    Decimal.normalize() -- it can flip whole numbers into scientific
+    notation for some magnitudes (Decimal("200").normalize() -> "2E+2"),
+    which would look worse than what we started with. Format to a plain
+    string first, then strip manually."""
+    text = str(qty)
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
 async def get_shop_header(db) -> dict:
     """Shop name/GSTIN for invoice headers. Reads Settings for now -- takes
     db so this can become a Preference lookup once Phase 7 lands, with no
@@ -55,7 +67,7 @@ def render_invoice_pdf(
             [
                 product.name,
                 product.hsn_code,
-                str(item.qty),
+                _format_qty(item.qty),
                 str(item.unit_price_at_sale),
                 str(line.taxable_value),
                 str(line.cgst),

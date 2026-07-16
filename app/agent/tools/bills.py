@@ -203,12 +203,15 @@ async def list_past_bills(
     offset: int = 0,
     limit: int = MAX_BILL_PAGE_SIZE,
 ) -> dict:
-    """List finalized bills for this chat, most recent first.
+    """List finalized bills across the whole shop, most recent first --
+    not scoped to this chat, since a bill created from one chat is still a
+    real shop sale from any other chat's point of view.
 
     Use this for "what did I sell yesterday", "show me Ramesh's past
     bills", "find that bill for X" type requests. Only finalized bills
     show up here -- a bill still being built is a draft, not a past bill
-    yet, see view_draft_bill for that.
+    yet, see view_draft_bill for that (which *is* chat-scoped, since a
+    draft in progress is inherently tied to the conversation building it).
 
     Args:
         customer_name: Optional filter, partial case-insensitive match
@@ -223,7 +226,7 @@ async def list_past_bills(
         raise ModelRetry(f"limit must be positive, got {limit}.")
     limit = min(limit, MAX_BILL_PAGE_SIZE)
 
-    filters = [Bill.chat_id == ctx.deps.chat_id, Bill.status == "finalized"]
+    filters = [Bill.status == "finalized"]
     if customer_name:
         filters.append(Bill.customer_name.ilike(f"%{customer_name}%"))
 

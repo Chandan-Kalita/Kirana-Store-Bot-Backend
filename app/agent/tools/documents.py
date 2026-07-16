@@ -14,6 +14,9 @@ MAX_DECK_SLIDES = 15
 
 
 async def _find_bill(db, chat_id: int, bill_id: str | None) -> Bill | None:
+    # no bill_id given -- "send me that bill" is a deictic reference to
+    # this conversation, so this branch stays chat-scoped: the shop's most
+    # recent sale overall isn't necessarily what "that bill" means here.
     if bill_id is None:
         return (
             await db.exec(
@@ -24,13 +27,14 @@ async def _find_bill(db, chat_id: int, bill_id: str | None) -> Bill | None:
             )
         ).first()
 
+    # explicit bill_id -- shop-wide. A bill is a real shop sale regardless
+    # of which chat created it; naming one by id shouldn't get silently
+    # refused just because a different chat finalized it.
     try:
         parsed_id = uuid.UUID(bill_id)
     except ValueError:
         raise ModelRetry(f"'{bill_id}' isn't a valid bill id.")
-    return (
-        await db.exec(select(Bill).where(Bill.id == parsed_id, Bill.chat_id == chat_id))
-    ).first()
+    return (await db.exec(select(Bill).where(Bill.id == parsed_id))).first()
 
 
 @agent.tool(sequential=True)

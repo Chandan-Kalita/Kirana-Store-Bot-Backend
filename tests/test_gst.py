@@ -32,17 +32,18 @@ class CalcLineGstTests(unittest.TestCase):
         result = calc_line_gst(Decimal("0.25"), Decimal("240.00"), Decimal("5"))
         self.assertEqual(result.line_total, Decimal("60.00"))
 
-    def test_line_always_balances_even_when_cgst_sgst_split_unevenly(self):
-        # 3 x 10.00 @ 12% -> taxable 26.79, gst_amount 3.21, which doesn't
-        # split evenly in half (1.605/1.605) -- cgst and sgst must differ
-        # by a paisa here, not both round the same way, or the line stops
-        # summing to line_total. Regression case for a bill seen in
-        # production where subtotal+cgst+sgst came out to 30.01 against a
-        # 30.00 total.
+    def test_cgst_always_equals_sgst_and_line_still_balances(self):
+        # 3 x 10.00 @ 12% -> line_total 30.00, taxable_value_raw 26.785714...
+        # cgst = sgst = round(26.785714... * 0.06) = 1.61 each (both from
+        # the same formula, so they can never diverge), taxable_value is
+        # the remainder: 30.00 - 1.61 - 1.61 = 26.78. Regression case for a
+        # bill seen in production where an earlier rounding order (taxable
+        # value rounded independently, cgst/sgst absorbing the slack) let
+        # cgst and sgst differ by a paisa from each other.
         result = calc_line_gst(Decimal("3"), Decimal("10.00"), Decimal("12"))
-        self.assertEqual(result.taxable_value, Decimal("26.79"))
+        self.assertEqual(result.taxable_value, Decimal("26.78"))
         self.assertEqual(result.cgst, Decimal("1.61"))
-        self.assertEqual(result.sgst, Decimal("1.60"))
+        self.assertEqual(result.sgst, Decimal("1.61"))
         self.assertEqual(result.line_total, Decimal("30.00"))
         self.assertEqual(
             result.taxable_value + result.cgst + result.sgst, result.line_total
@@ -58,6 +59,7 @@ class CalcLineGstTests(unittest.TestCase):
                             result.taxable_value + result.cgst + result.sgst,
                             result.line_total,
                         )
+                        self.assertEqual(result.cgst, result.sgst)
 
 
 if __name__ == "__main__":
