@@ -3,8 +3,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.agent import agent
 from app.agent.conversation import load_history, save_history
-from app.agent.core import agent
 from app.agent.deps import AgentDeps
 from app.services.core.telegram import send_message
 from app.services.helper.db import get_session
