@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Numeric
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Numeric, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlmodel import Field, SQLModel
@@ -65,9 +65,12 @@ class StockMovement(SQLModel, table=True):
     # positive for receiving, negative for a sale/adjustment
     delta_qty: Decimal = Field(sa_column=Column(Numeric(10, 3), nullable=False))
     reason: str
-    # no FK yet -- Bill table doesn't exist; add the real FK once Bill lands
-    # in a later migration, don't block this one on ordering.
-    reference_id: int | None = Field(default=None)
+    # set to the originating Bill's id for reason="sale" movements; null for
+    # receive/adjustment.
+    reference_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(PGUUID(as_uuid=True), ForeignKey("bill.id"), nullable=True),
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False),
         default_factory=_utcnow,
@@ -106,3 +109,76 @@ class ConversationArchive(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=False),
         default_factory=_utcnow,
     )
+
+
+class Bill(SQLModel, table=True):
+    __tablename__ = "bill"
+    __table_args__ = (
+        # at most one draft bill per chat -- the DB-level guardrail against
+        # two bills in flight at once corrupting stock, not just app logic.
+        Index(
+            "ix_bill_chat_id_draft_unique",
+            "chat_id",
+            unique=True,
+            postgresql_where=text("status = 'draft'"),
+        ),
+    )
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(PGUUID(as_uuid=True), primary_key=True),
+    )
+    chat_id: int = Field(sa_column=Column(BigInteger, nullable=False, index=True))
+    status: str = Field(default="draft")
+    # for khata linkage in Phase 4
+    customer_name: str | None = Field(default=None)
+    # only ever set at finalize, never during drafting
+    payment_mode: str | None = Field(default=None)
+    payment_ref: str | None = Field(default=None)
+    # only computed and frozen onto the row at finalize -- while drafting,
+    # totals are derived on demand from BillItem rows (see gst.py) so there's
+    # no denormalized running total to drift out of sync with the line items.
+    subtotal: Decimal | None = Field(
+        default=None, sa_column=Column(Numeric(10, 2), nullable=True)
+    )
+    cgst_total: Decimal | None = Field(
+        default=None, sa_column=Column(Numeric(10, 2), nullable=True)
+    )
+    sgst_total: Decimal | None = Field(
+        default=None, sa_column=Column(Numeric(10, 2), nullable=True)
+    )
+    total_amount: Decimal | None = Field(
+        default=None, sa_column=Column(Numeric(10, 2), nullable=True)
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+        default_factory=_utcnow,
+    )
+    finalized_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+
+
+class BillItem(SQLModel, table=True):
+    __tablename__ = "bill_item"
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(PGUUID(as_uuid=True), primary_key=True),
+    )
+    bill_id: uuid.UUID = Field(
+        sa_column=Column(
+            PGUUID(as_uuid=True), ForeignKey("bill.id"), nullable=False, index=True
+        )
+    )
+    product_id: uuid.UUID = Field(
+        sa_column=Column(
+            PGUUID(as_uuid=True), ForeignKey("product.id"), nullable=False, index=True
+        )
+    )
+    qty: Decimal = Field(sa_column=Column(Numeric(10, 3), nullable=False))
+    # snapshot at add-time, not looked up fresh at finalize -- a mid-
+    # conversation price change elsewhere shouldn't silently alter an
+    # in-progress bill.
+    unit_price_at_sale: Decimal = Field(sa_column=Column(Numeric(10, 2), nullable=False))
+    gst_slab_at_sale: Decimal = Field(sa_column=Column(Numeric(4, 2), nullable=False))
