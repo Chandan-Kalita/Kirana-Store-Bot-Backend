@@ -105,7 +105,8 @@ async def set_item_qty(ctx: RunContext[AgentDeps], sku: str, qty: Decimal) -> di
     the owner only gave a product name. Setting qty to 0 removes the line.
     Sells at the product's current MRP. Performs a soft, non-locking stock
     and below-cost check here purely for early warning; the authoritative
-    checks happen at finalize_bill.
+    checks happen when the owner actually confirms via the Confirm button
+    (see request_finalize_confirmation).
 
     Args:
         sku: Exact SKU of the product.
@@ -208,6 +209,12 @@ async def cancel_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
     ).all()
     for item in items:
         await ctx.deps.db.delete(item)
+    # flush the item deletes before deleting the bill -- Bill/BillItem have
+    # no ORM relationship() between them, so the unit-of-work has no
+    # dependency info to order a single flush correctly and can violate the
+    # bill_item -> bill FK.
+    await ctx.deps.db.flush()
+
     await ctx.deps.db.delete(bill)
     await ctx.deps.db.flush()
 
@@ -215,49 +222,32 @@ async def cancel_draft_bill(ctx: RunContext[AgentDeps]) -> dict:
 
 
 @agent.tool(sequential=True)
-async def finalize_bill(
+async def request_finalize_confirmation(
     ctx: RunContext[AgentDeps],
     payment_mode: PaymentMode,
     payment_ref: str | None = None,
 ) -> dict:
-    """Finalize the current draft bill: deducts stock and freezes totals.
+    """Ask the owner to confirm finalizing the current draft bill.
 
-    Refuses, leaving everything untouched, if any line would oversell a
-    product's current stock or is priced below the product's cost price.
-    Safe to call again after a successful finalize for the same chat: since
-    finalize flips the bill's status away from "draft", a retried call
-    naturally finds no draft left and instead reports the already-finalized
-    bill, rather than double-deducting stock.
+    Call this once the bill is fully built and the owner has told you how
+    they paid (and a reference, if they gave one). This does NOT finalize
+    anything by itself -- it stores the payment details on the draft and
+    shows the owner Confirm/Cancel buttons; the bill only finalizes if they
+    tap Confirm. There is no other way to finalize a bill -- no tool call
+    and nothing said in chat can do it, only that button tap.
+
+    After calling this, just state the item list and total in your reply
+    (returned here) -- do not also ask "shall I finalize?" in text, the
+    buttons already ask that, and don't call this again unless the bill
+    actually changed since the last call.
 
     Args:
-        payment_mode: How the owner was paid -- cash, upi, or card.
-        payment_ref: Optional reference (UPI txn id, card auth code, etc).
+        payment_mode: How the owner says they paid -- cash, upi, or card.
+        payment_ref: Optional reference (UPI txn id, card auth code, etc)
+            if the owner gave one.
     """
-    bill = (
-        await ctx.deps.db.exec(
-            select(Bill)
-            .where(Bill.chat_id == ctx.deps.chat_id, Bill.status == "draft")
-            .with_for_update()
-        )
-    ).first()
-
+    bill = await _load_draft(ctx.deps.db, ctx.deps.chat_id)
     if bill is None:
-        last = (
-            await ctx.deps.db.exec(
-                select(Bill)
-                .where(
-                    Bill.chat_id == ctx.deps.chat_id, Bill.status == "finalized"
-                )
-                .order_by(Bill.finalized_at.desc())
-                .limit(1)
-            )
-        ).first()
-        if last is not None:
-            return {
-                "already_finalized": True,
-                "bill_id": str(last.id),
-                "total_amount": last.total_amount,
-            }
         raise ModelRetry("No draft bill for this chat. Call start_bill first.")
 
     rows = await _load_draft_items_with_products(ctx.deps.db, bill.id)
@@ -266,12 +256,81 @@ async def finalize_bill(
             "Draft bill has no items. Add some with set_item_qty first."
         )
 
+    bill.payment_mode = payment_mode
+    bill.payment_ref = payment_ref
+    ctx.deps.db.add(bill)
+    await ctx.deps.db.flush()
+
+    ctx.deps.pending_confirmation = True
+
+    view = _bill_view(bill, rows)
+    view["payment_mode"] = payment_mode
+    view["payment_ref"] = payment_ref
+    return view
+
+
+async def finalize_confirmed_bill(db, chat_id: int) -> dict:
+    """Finalize the current draft bill: deducts stock and freezes totals.
+
+    Only ever called from the Telegram Confirm-button callback handler in
+    tasks.py -- deliberately NOT an @agent.tool, so there is no tool call an
+    LLM can make (correctly or otherwise) that reaches this. Reads
+    payment_mode/payment_ref off the bill row, stashed there earlier by
+    request_finalize_confirmation.
+
+    Refuses, leaving everything untouched, if any line would oversell a
+    product's current stock or is priced below the product's cost price.
+    Safe to call again for the same chat after a successful finalize: since
+    finalize flips the bill's status away from "draft", a repeat call (e.g.
+    a duplicate callback delivery) naturally finds no draft left and
+    instead reports the already-finalized bill, rather than
+    double-deducting stock.
+
+    Returns {"ok": False, "message": ...} on refusal, or
+    {"ok": True, ...breakdown...} on success (with "already_finalized": True
+    if this chat's draft was already finalized by an earlier call).
+    """
+    bill = (
+        await db.exec(
+            select(Bill)
+            .where(Bill.chat_id == chat_id, Bill.status == "draft")
+            .with_for_update()
+        )
+    ).first()
+
+    if bill is None:
+        last = (
+            await db.exec(
+                select(Bill)
+                .where(Bill.chat_id == chat_id, Bill.status == "finalized")
+                .order_by(Bill.finalized_at.desc())
+                .limit(1)
+            )
+        ).first()
+        if last is not None:
+            return {
+                "ok": True,
+                "already_finalized": True,
+                "bill_id": str(last.id),
+                "total_amount": last.total_amount,
+            }
+        return {"ok": False, "message": "No draft bill found for this chat."}
+
+    rows = await _load_draft_items_with_products(db, bill.id)
+    if not rows:
+        return {"ok": False, "message": "Draft bill has no items."}
+    if not bill.payment_mode:
+        return {
+            "ok": False,
+            "message": "No payment mode on file for this draft.",
+        }
+
     # Lock the involved products in a consistent (sorted) order -- two
     # concurrent finalizes touching the same products in different orders
     # is a classic deadlock setup; sorting first avoids it.
     product_ids = sorted({item.product_id for item, _ in rows})
     locked_products = (
-        await ctx.deps.db.exec(
+        await db.exec(
             select(Product).where(Product.id.in_(product_ids)).with_for_update()
         )
     ).all()
@@ -293,17 +352,15 @@ async def finalize_bill(
             )
 
     if oversell:
-        raise ModelRetry(
-            "Cannot finalize -- not enough stock: "
-            + "; ".join(oversell)
-            + ". Adjust quantities with set_item_qty."
-        )
+        return {
+            "ok": False,
+            "message": "Not enough stock: " + "; ".join(oversell),
+        }
     if below_cost:
-        raise ModelRetry(
-            "Cannot finalize -- priced below cost: "
-            + "; ".join(below_cost)
-            + ". Re-add at a higher price with set_item_qty."
-        )
+        return {
+            "ok": False,
+            "message": "Priced below cost: " + "; ".join(below_cost),
+        }
 
     line_items = []
     subtotal = cgst_total = sgst_total = total_amount = Decimal("0")
@@ -316,8 +373,8 @@ async def finalize_bill(
         total_amount += line.line_total
 
         product.qty_on_hand -= item.qty
-        ctx.deps.db.add(product)
-        ctx.deps.db.add(
+        db.add(product)
+        db.add(
             StockMovement(
                 product_id=product.id,
                 delta_qty=-item.qty,
@@ -336,17 +393,16 @@ async def finalize_bill(
         )
 
     bill.status = "finalized"
-    bill.payment_mode = payment_mode
-    bill.payment_ref = payment_ref
     bill.subtotal = subtotal
     bill.cgst_total = cgst_total
     bill.sgst_total = sgst_total
     bill.total_amount = total_amount
     bill.finalized_at = datetime.now(timezone.utc)
-    ctx.deps.db.add(bill)
-    await ctx.deps.db.flush()
+    db.add(bill)
+    await db.flush()
 
     return {
+        "ok": True,
         "bill_id": str(bill.id),
         "customer_name": bill.customer_name,
         "payment_mode": bill.payment_mode,
