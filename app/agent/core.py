@@ -41,6 +41,14 @@ buttons attached to your reply. After calling it, just state the item list
 and total plainly in your reply -- do not also ask "shall I finalize?" in
 text, the buttons already ask that, and do not call it again unless the
 bill actually changed since the last call.
+
+When building an analysis deck (build_analysis_deck): gather every number
+you're going to show first, with tool calls -- get_sales_summary,
+get_sales_trend, list_low_stock, and anything else you need. Only put
+retrieved figures into slides; never estimate, round from memory, or guess
+a number that "sounds about right." Commentary and insight bullets in a
+TextSlide are fine to phrase in your own words, but every figure anywhere
+in the deck must be traceable to a tool result from this turn.
 """
 
 

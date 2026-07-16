@@ -79,3 +79,20 @@ async def edit_message_text(chat_id: int | str, message_id: int, text: str) -> N
             json={"chat_id": chat_id, "message_id": message_id, "text": _sanitize(text)},
         )
         resp.raise_for_status()
+
+
+async def send_document(
+    chat_id: int | str, filename: str, content: bytes, caption: str | None = None
+) -> None:
+    # multipart, not JSON -- sendDocument takes the file as form data, and
+    # generated PDFs/PPTXs can take longer than a plain text send
+    data = {"chat_id": chat_id}
+    if caption:
+        data["caption"] = _sanitize(caption)
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            _bot_url("sendDocument"),
+            data=data,
+            files={"document": (filename, content)},
+        )
+        resp.raise_for_status()

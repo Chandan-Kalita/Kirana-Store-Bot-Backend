@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # points at DeepSeek's Anthropic-compatible endpoint, not api.anthropic.com
     anthropic_model: str = "deepseek-chat"
 
+    # invoice header -- swap get_shop_header()'s internals to a Preference
+    # lookup once Phase 7 lands, callers don't change
+    shop_name: str = "Kirana Store"
+    shop_gstin: str | None = 1111222233334444
+
     # Cloud Run/Cloud Tasks wiring -- set by terraform/cloud_run.tf on the
     # deployed service. task_handler_path defaults to match the Terraform
     # variable's default (terraform/variables.tf) for local dev.

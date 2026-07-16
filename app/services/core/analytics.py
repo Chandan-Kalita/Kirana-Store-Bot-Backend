@@ -102,3 +102,30 @@ async def compute_summary(db, start: datetime, end: datetime, top_n: int = 5) ->
             for sku, name, qty, revenue in top_rows
         ],
     }
+
+
+async def compute_daily_breakdown(db, start: datetime, end: datetime) -> list[dict]:
+    """Per-IST-day sales totals for finalized bills in [start, end) (UTC),
+    for trend charts. One query, grouped in Python by IST calendar day
+    (STORE_TZ) rather than N per-day queries or a Postgres AT TIME ZONE
+    query -- keeps the one IST-conversion rule in one place, tested once.
+    """
+    rows = (
+        await db.exec(
+            select(Bill.finalized_at, Bill.total_amount).where(
+                Bill.status == "finalized",
+                Bill.finalized_at >= start,
+                Bill.finalized_at < end,
+            )
+        )
+    ).all()
+
+    buckets: dict[date_, Decimal] = {}
+    for finalized_at, total_amount in rows:
+        day = finalized_at.astimezone(STORE_TZ).date()
+        buckets[day] = buckets.get(day, Decimal("0")) + total_amount
+
+    return [
+        {"date": day.isoformat(), "total_sales": total}
+        for day, total in sorted(buckets.items())
+    ]
