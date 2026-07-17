@@ -6,6 +6,8 @@ A conversational agent that runs an Indian kirana store end-to-end from Telegram
 - Phone: https://t.me/chandans_kirana_store_bot 
 - Web: https://web.telegram.org/k/#@chandans_kirana_store_bot
 
+**Demo recording:** https://drive.google.com/file/d/1WVmNbG5z-5J0FFyc4YK_JgtsL4jPChOZ/view?usp=sharing
+
 Note: the bot may take a few seconds to respond to the first message after a period of inactivity — Cloud Run is scaled to zero instances (a budget choice), so the first request pays a cold-start cost before the container is warm.
 
 ## Harness & model
@@ -30,6 +32,8 @@ Telegram → POST /webhook → verify secret token → enqueue via Cloud Tasks �
 Telegram needs a fast 200 or it redelivers; the actual agent turn (LLM call, DB writes) can take a few seconds, so `webhook.py` does almost nothing but auth-check and hand off. Cloud Tasks names each task after the Telegram `update_id`, so a redelivered update collapses into the same task instead of double-processing. Conversation history is Pydantic AI's serialized message list, stored per `chat_id` in Postgres and reloaded each turn — the container is stateless between invocations, so this is what makes multi-turn bills and ongoing chat context work at all. `/new` archives and clears that chat's conversation row (`ConversationArchive`, an append-only audit log) without touching stock, bills, khata, or preferences — those live in tables `/new` never reaches.
 
 **Callback buttons get a separate fast path.** A button tap answers immediately in `webhook.py`, before the Cloud Tasks round trip — routing it through the queue first made taps look unresponsive. The actual finalize logic still runs through the normal async path afterward.
+
+**Infra is Terraform, not console click-ops.** `terraform/` provisions the Cloud Run service, the Cloud Tasks queue, the service accounts and OIDC wiring behind `tasks_auth.py`, Secret Manager entries, the Artifact Registry repo, and the Cloud Build trigger that deploys on push to `master` — none of it set up by hand in the GCP console. Wasn't asked for by the brief, but a deployed service without a repeatable, versioned way to stand it back up felt like an obvious gap. One guardrail worth calling out: an agent session only ever runs `init`/`validate`/`fmt` against it — `apply` and `plan` are deliberately left to be run by hand, not delegated, since infra changes are the one category of mistake here that isn't easily undone.
 
 ## Data model: what's global vs. what's per-chat
 
