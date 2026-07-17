@@ -7,6 +7,7 @@ from sqlmodel import select
 
 from app.agent.core import agent
 from app.agent.deps import AgentDeps
+from app.services.core.analytics import compute_reorder_suggestions
 from app.services.helper.models import Product, StockMovement
 
 Unit = Literal["kg", "g", "litre", "ml", "packet", "dozen", "piece"]
@@ -238,3 +239,36 @@ async def list_low_stock(
         }
         for p in products
     ]
+
+
+@agent.tool(sequential=True)
+async def suggest_reorders(
+    ctx: RunContext[AgentDeps], lookback_days: int = 14, alert_days: int = 7
+) -> list[dict]:
+    """Predict what's about to run out based on actual sales pace, soonest first.
+
+    Different question from list_low_stock: list_low_stock answers "what's
+    below the manually-set reorder point" (static, ignores how fast
+    anything is actually selling). This answers "what should I reorder" /
+    "what's going to run out soon" -- it estimates daily sales velocity
+    from recent StockMovement history and flags anything projected to run
+    out within alert_days, even a product that's still comfortably above
+    its reorder_level but selling fast enough to run dry within the week.
+    Prefer this one whenever the owner asks what to reorder or what's
+    running low in a forward-looking sense; use list_low_stock for a
+    simple "below threshold" check.
+
+    Args:
+        lookback_days: How many days of sales history to compute velocity
+            from. Defaults to 14.
+        alert_days: Only flag products projected to run out within this
+            many days. Defaults to 7.
+    """
+    if lookback_days <= 0:
+        raise ModelRetry(f"lookback_days must be positive, got {lookback_days}.")
+    if alert_days <= 0:
+        raise ModelRetry(f"alert_days must be positive, got {alert_days}.")
+
+    return await compute_reorder_suggestions(
+        ctx.deps.db, lookback_days=lookback_days, alert_days=alert_days
+    )

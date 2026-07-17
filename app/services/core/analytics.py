@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlmodel import select
 
-from app.services.helper.models import Bill, BillItem, Product
+from app.services.helper.models import Bill, BillItem, Product, StockMovement
 
 _TWO_PLACES = Decimal("0.01")
 
@@ -129,3 +129,69 @@ async def compute_daily_breakdown(db, start: datetime, end: datetime) -> list[di
         {"date": day.isoformat(), "total_sales": total}
         for day, total in sorted(buckets.items())
     ]
+
+
+async def compute_reorder_suggestions(
+    db, lookback_days: int = 14, alert_days: int = 7, target_days: int = 14
+) -> list[dict]:
+    """Products projected to run out within alert_days, soonest first.
+
+    Unlike a static reorder_level check (list_low_stock), this estimates
+    actual sales pace: total units sold (StockMovement reason="sale") over
+    the last lookback_days, divided by the full window length to get a
+    daily velocity. That denominator is always lookback_days, even for a
+    product that's only had stock/sales for part of the window -- a known,
+    deliberate simplification (a new fast-seller's velocity is
+    underestimated until it's been selling for the full window) rather than
+    solving precisely for how long each product has actually existed.
+
+    days_remaining = qty_on_hand / daily_velocity. suggested_reorder_qty
+    tops up to target_days of runway on top of current stock:
+    max(0, daily_velocity * target_days - qty_on_hand). Products with no
+    sales in the window are skipped entirely -- zero velocity is no signal,
+    not "infinite runway".
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    window = Decimal(lookback_days)
+
+    rows = (
+        await db.exec(
+            select(
+                Product.sku,
+                Product.name,
+                Product.qty_on_hand,
+                func.sum(-StockMovement.delta_qty),
+            )
+            .join(StockMovement, StockMovement.product_id == Product.id)
+            .where(
+                StockMovement.reason == "sale",
+                StockMovement.created_at >= cutoff,
+            )
+            .group_by(Product.id, Product.sku, Product.name, Product.qty_on_hand)
+        )
+    ).all()
+
+    suggestions = []
+    for sku, name, qty_on_hand, units_sold in rows:
+        daily_velocity = units_sold / window
+        if daily_velocity <= 0:
+            continue
+        days_remaining = qty_on_hand / daily_velocity
+        if days_remaining > alert_days:
+            continue
+        suggested_reorder_qty = max(
+            Decimal("0"), daily_velocity * target_days - qty_on_hand
+        )
+        suggestions.append(
+            {
+                "sku": sku,
+                "name": name,
+                "qty_on_hand": qty_on_hand,
+                "daily_velocity": daily_velocity,
+                "days_remaining": days_remaining,
+                "suggested_reorder_qty": suggested_reorder_qty,
+            }
+        )
+
+    suggestions.sort(key=lambda s: s["days_remaining"])
+    return suggestions
