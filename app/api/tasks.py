@@ -48,7 +48,7 @@ async def handle_task(
     chat_id = message["chat"]["id"]
     text = message["text"]
 
-    if text.strip() == "/new":
+    if text.strip() in ["/new", "/start"] :
         conversation = await session.get(Conversation, chat_id)
         if conversation is not None:
             session.add(
